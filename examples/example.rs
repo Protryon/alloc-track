@@ -1,7 +1,10 @@
-use std::{alloc::System, sync::mpsc, time::{Duration, Instant}};
+use std::{
+    alloc::System,
+    sync::mpsc,
+    time::{Duration, Instant},
+};
 
 use alloc_track::{AllocTrack, BacktraceMode};
-
 
 #[global_allocator]
 static GLOBAL_ALLOC: AllocTrack<System> = AllocTrack::new(System, BacktraceMode::Short);

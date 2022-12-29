@@ -1,8 +1,8 @@
+use std::collections::hash_map::DefaultHasher;
 use std::fmt;
 use std::hash::{Hash, Hasher};
-use std::{collections::hash_map::DefaultHasher};
 
-use backtrace::{Backtrace, BytesOrWideString, BacktraceFmt, PrintFmt};
+use backtrace::{Backtrace, BacktraceFmt, BytesOrWideString, PrintFmt};
 
 use crate::{BacktraceMode, Size};
 
@@ -37,7 +37,10 @@ impl HashedBacktrace {
         }
         let backtrace = Backtrace::new_unresolved();
         let mut hasher = DefaultHasher::new();
-        backtrace.frames().iter().for_each(|x| hasher.write_u64(x.ip() as u64));
+        backtrace
+            .frames()
+            .iter()
+            .for_each(|x| hasher.write_u64(x.ip() as u64));
         let hash = hasher.finish();
         Self {
             inner: Some(backtrace),
@@ -62,18 +65,17 @@ impl HashedBacktrace {
         let frames = self.inner().frames();
 
         let cwd = std::env::current_dir();
-        let mut print_path =
-            move |fmt: &mut fmt::Formatter<'_>, path: BytesOrWideString<'_>| {
-                let path = path.into_path_buf();
-                if !full {
-                    if let Ok(cwd) = &cwd {
-                        if let Ok(suffix) = path.strip_prefix(cwd) {
-                            return fmt::Display::fmt(&suffix.display(), fmt);
-                        }
+        let mut print_path = move |fmt: &mut fmt::Formatter<'_>, path: BytesOrWideString<'_>| {
+            let path = path.into_path_buf();
+            if !full {
+                if let Ok(cwd) = &cwd {
+                    if let Ok(suffix) = path.strip_prefix(cwd) {
+                        return fmt::Display::fmt(&suffix.display(), fmt);
                     }
                 }
-                fmt::Display::fmt(&path.display(), fmt)
-            };
+            }
+            fmt::Display::fmt(&path.display(), fmt)
+        };
 
         let mut f = BacktraceFmt::new(f, PrintFmt::Short, &mut print_path);
         f.add_context()?;
@@ -82,7 +84,16 @@ impl HashedBacktrace {
             for symbol in symbols {
                 if let Some(name) = symbol.name().map(|x| x.to_string()) {
                     let name = name.strip_prefix('<').unwrap_or(&name);
-                    if name.starts_with("alloc_track::") || name == "__rg_alloc" || name.starts_with("alloc::") || name.starts_with("std::panicking::") || name == "__rust_try" || name == "_start" || name == "__libc_start_main_impl" || name == "__libc_start_call_main" || name.starts_with("std::rt::") {
+                    if name.starts_with("alloc_track::")
+                        || name == "__rg_alloc"
+                        || name.starts_with("alloc::")
+                        || name.starts_with("std::panicking::")
+                        || name == "__rust_try"
+                        || name == "_start"
+                        || name == "__libc_start_main_impl"
+                        || name == "__libc_start_call_main"
+                        || name.starts_with("std::rt::")
+                    {
                         continue;
                     }
                 }
@@ -123,7 +134,11 @@ impl fmt::Display for BacktraceMetric {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "allocated: {}", Size(self.allocated))?;
         writeln!(f, "freed: {}", Size(self.freed))?;
-        writeln!(f, "total_used: {}", Size(self.allocated.saturating_sub(self.freed)))?;
+        writeln!(
+            f,
+            "total_used: {}",
+            Size(self.allocated.saturating_sub(self.freed))
+        )?;
         Ok(())
     }
 }
@@ -135,11 +150,12 @@ impl fmt::Display for BacktraceReport {
         for (backtrace, metric) in &self.0 {
             match metric.mode {
                 BacktraceMode::None => unreachable!(),
-                BacktraceMode::Short => writeln!(f, "{}\n{metric}\n\n", HashedBacktraceShort(backtrace))?,
+                BacktraceMode::Short => {
+                    writeln!(f, "{}\n{metric}\n\n", HashedBacktraceShort(backtrace))?
+                }
                 BacktraceMode::Full => writeln!(f, "{:?}\n{metric}\n\n", backtrace.inner())?,
             }
         }
         Ok(())
     }
 }
-

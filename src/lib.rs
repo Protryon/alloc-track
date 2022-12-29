@@ -7,7 +7,6 @@ use std::{
     sync::atomic::{AtomicU32, AtomicUsize, Ordering},
 };
 
-
 #[cfg(feature = "backtrace")]
 mod backtrace_support;
 #[cfg(feature = "backtrace")]
@@ -54,8 +53,15 @@ struct ThreadStoreLocal {
 }
 
 /// Custom psuedo-TLS implementation that allows safe global introspection
-static THREAD_STORE: [ThreadStore; MAX_THREADS] =
-    unsafe { std::mem::transmute([ThreadStoreLocal { tid: 0, alloc: 0, free: [0usize; MAX_THREADS] }; MAX_THREADS]) };
+static THREAD_STORE: [ThreadStore; MAX_THREADS] = unsafe {
+    std::mem::transmute(
+        [ThreadStoreLocal {
+            tid: 0,
+            alloc: 0,
+            free: [0usize; MAX_THREADS],
+        }; MAX_THREADS],
+    )
+};
 
 thread_local! {
     static THREAD_ID: usize = THREAD_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -102,16 +108,20 @@ unsafe impl<T: GlobalAlloc> GlobalAlloc for AllocTrack<T> {
             let ptr = self.inner.alloc(layout);
             let tid = THREAD_ID.with(|x| *x);
             if THREAD_STORE[tid].tid.load(Ordering::Relaxed) == 0 {
-                THREAD_STORE[tid].tid.store(libc::gettid() as u32, Ordering::Relaxed);
+                let os_tid = libc::syscall(libc::SYS_gettid) as u32;
+                THREAD_STORE[tid].tid.store(os_tid, Ordering::Relaxed);
             }
             THREAD_STORE[tid].alloc.fetch_add(size, Ordering::Relaxed);
             #[cfg(feature = "backtrace")]
             let trace = HashedBacktrace::capture(self.backtrace);
-            PTR_MAP.insert(ptr as usize, PointerData {
-                alloc_thread_id: tid,
-                #[cfg(feature = "backtrace")]
-                trace_hash: trace.hash(),
-            });
+            PTR_MAP.insert(
+                ptr as usize,
+                PointerData {
+                    alloc_thread_id: tid,
+                    #[cfg(feature = "backtrace")]
+                    trace_hash: trace.hash(),
+                },
+            );
             #[cfg(feature = "backtrace")]
             if !matches!(self.backtrace, BacktraceMode::None) {
                 let mut trace_info = TRACE_MAP.entry(trace.hash()).or_insert_with(|| TraceInfo {
@@ -122,7 +132,7 @@ unsafe impl<T: GlobalAlloc> GlobalAlloc for AllocTrack<T> {
                 });
                 trace_info.allocated += size as u64;
             }
-            ptr    
+            ptr
         })
     }
 
