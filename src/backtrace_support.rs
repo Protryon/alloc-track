@@ -2,6 +2,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
+pub use backtrace;
 use backtrace::{Backtrace, BacktraceFmt, BytesOrWideString, PrintFmt};
 
 use crate::{BacktraceMode, Size};
