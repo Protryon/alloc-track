@@ -23,7 +23,7 @@ fn main() {
         std::thread::sleep(Duration::from_millis(100));
         if last_print.elapsed() > Duration::from_secs(10) {
             last_print = Instant::now();
-            let report = alloc_track::backtrace_report();
+            let report = alloc_track::backtrace_report(1024);
             println!("BACKTRACES\n{report}");
             let report = alloc_track::thread_report();
             println!("THREADS\n{report}");

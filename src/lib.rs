@@ -212,18 +212,20 @@ impl fmt::Display for ThreadReport {
 
 /// Generate a memory usage report for backtraces, if enabled
 #[cfg(feature = "backtrace")]
-pub fn backtrace_report() -> BacktraceReport {
+pub fn backtrace_report(min_size: u64) -> BacktraceReport {
     IN_ALLOC.with(|x| x.set(true));
     let mut out = vec![];
-    for entry in TRACE_MAP.iter() {
+    for mut entry in TRACE_MAP.iter_mut() {
         let metric = BacktraceMetric {
             allocated: entry.allocated,
             freed: entry.freed,
             mode: entry.mode,
         };
-        let mut backtrace = entry.backtrace.clone();
-        backtrace.inner_mut().resolve();
-        out.push((backtrace, metric));
+        if metric.allocated.saturating_sub(metric.freed) < min_size {
+            continue;
+        }
+        entry.backtrace.inner_mut().resolve();
+        out.push((entry.backtrace.clone(), metric));
     }
     out.sort_by_key(|x| x.1.allocated.saturating_sub(x.1.freed) as i64);
     IN_ALLOC.with(|x| x.set(false));
