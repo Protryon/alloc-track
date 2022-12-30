@@ -129,8 +129,10 @@ unsafe impl<T: GlobalAlloc> GlobalAlloc for AllocTrack<T> {
                     allocated: 0,
                     freed: 0,
                     mode: self.backtrace,
+                    allocations: 0,
                 });
                 trace_info.allocated += size as u64;
+                trace_info.allocations += 1;
             }
             ptr
         })
@@ -168,6 +170,21 @@ impl fmt::Display for Size {
             write!(f, "{} KB", self.0 / 1024)
         } else {
             write!(f, "{} MB", self.0 / 1024 / 1024)
+        }
+    }
+}
+
+/// Size display helper
+pub struct SizeF64(pub f64);
+
+impl fmt::Display for SizeF64 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.0 < 1024.0 {
+            write!(f, "{:.01} B", self.0)
+        } else if self.0 < 1024.0 * 1024.0 {
+            write!(f, "{:.01} KB", self.0 / 1024.0)
+        } else {
+            write!(f, "{:.01} MB", self.0 / 1024.0 / 1024.0)
         }
     }
 }
@@ -222,6 +239,7 @@ pub fn backtrace_report(
             allocated: entry.allocated,
             freed: entry.freed,
             mode: entry.mode,
+            allocations: entry.allocations,
         };
         if !filter(entry.backtrace.inner(), &metric) {
             continue;

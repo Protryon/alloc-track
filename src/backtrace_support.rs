@@ -5,7 +5,7 @@ use std::hash::{Hash, Hasher};
 pub use backtrace;
 use backtrace::{Backtrace, BacktraceFmt, BytesOrWideString, PrintFmt};
 
-use crate::{BacktraceMode, Size};
+use crate::{BacktraceMode, Size, SizeF64};
 
 #[derive(Clone)]
 pub struct HashedBacktrace {
@@ -17,6 +17,7 @@ pub struct TraceInfo {
     pub backtrace: HashedBacktrace,
     pub allocated: u64,
     pub freed: u64,
+    pub allocations: u64,
     pub mode: BacktraceMode,
 }
 
@@ -128,18 +129,31 @@ impl Hash for HashedBacktrace {
 pub struct BacktraceMetric {
     pub allocated: u64,
     pub freed: u64,
+    pub allocations: u64,
     pub mode: BacktraceMode,
+}
+
+impl BacktraceMetric {
+    pub fn in_use(&self) -> u64 {
+        self.allocated.saturating_sub(self.freed)
+    }
+
+    pub fn avg_allocation(&self) -> f64 {
+        if self.allocations == 0 {
+            0.0
+        } else {
+            self.allocated as f64 / self.allocations as f64
+        }
+    }
 }
 
 impl fmt::Display for BacktraceMetric {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "allocated: {}", Size(self.allocated))?;
+        writeln!(f, "allocations: {}", Size(self.allocations))?;
+        writeln!(f, "avg_allocation: {}", SizeF64(self.avg_allocation()))?;
         writeln!(f, "freed: {}", Size(self.freed))?;
-        writeln!(
-            f,
-            "total_used: {}",
-            Size(self.allocated.saturating_sub(self.freed))
-        )?;
+        writeln!(f, "total_used: {}", Size(self.in_use()))?;
         Ok(())
     }
 }
