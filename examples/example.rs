@@ -32,7 +32,13 @@ fn main() {
 }
 
 fn thread(receiver: mpsc::Receiver<Vec<u8>>) {
+    let mut flip = false;
     while let Ok(block) = receiver.recv() {
-        drop(block);
+        if flip {
+            drop(block);
+        } else {
+            std::mem::forget(block);
+        }
+        flip = !flip;
     }
 }

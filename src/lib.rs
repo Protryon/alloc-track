@@ -225,7 +225,7 @@ pub fn backtrace_report() -> BacktraceReport {
         backtrace.inner_mut().resolve();
         out.push((backtrace, metric));
     }
-    out.sort_by_key(|x| -(x.1.allocated.saturating_sub(x.1.freed) as i64));
+    out.sort_by_key(|x| x.1.allocated.saturating_sub(x.1.freed) as i64);
     IN_ALLOC.with(|x| x.set(false));
     let out2 = out.clone();
     IN_ALLOC.with(|x| x.set(true));
