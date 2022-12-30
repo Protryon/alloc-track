@@ -150,7 +150,7 @@ impl BacktraceMetric {
 impl fmt::Display for BacktraceMetric {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "allocated: {}", Size(self.allocated))?;
-        writeln!(f, "allocations: {}", Size(self.allocations))?;
+        writeln!(f, "allocations: {}", self.allocations)?;
         writeln!(f, "avg_allocation: {}", SizeF64(self.avg_allocation()))?;
         writeln!(f, "freed: {}", Size(self.freed))?;
         writeln!(f, "total_used: {}", Size(self.in_use()))?;
