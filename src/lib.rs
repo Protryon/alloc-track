@@ -1,3 +1,5 @@
+#![doc = include_str!("../README.md")]
+
 use dashmap::DashMap;
 use std::{
     alloc::{GlobalAlloc, Layout},
@@ -80,13 +82,17 @@ fn enter_alloc<T>(func: impl FnOnce() -> T) -> T {
 #[derive(Default, Clone, Copy, Debug, PartialEq)]
 pub enum BacktraceMode {
     #[default]
+    /// Report no backtraces
     None,
     #[cfg(feature = "backtrace")]
+    /// Report backtraces with unuseful entries removed (i.e. alloc_track, allocator internals)
     Short,
+    /// Report the full backtrace
     #[cfg(feature = "backtrace")]
     Full,
 }
 
+/// Global memory allocator wrapper that can track per-thread and per-backtrace memory usage.
 pub struct AllocTrack<T: GlobalAlloc> {
     inner: T,
     backtrace: BacktraceMode,
@@ -216,6 +222,7 @@ impl fmt::Display for ThreadMetric {
     }
 }
 
+/// A comprehensive report of all thread allocation metrics
 pub struct ThreadReport(pub BTreeMap<String, ThreadMetric>);
 
 impl fmt::Display for ThreadReport {

@@ -13,7 +13,7 @@ pub struct HashedBacktrace {
     hash: u64,
 }
 
-pub struct TraceInfo {
+pub(super) struct TraceInfo {
     pub backtrace: HashedBacktrace,
     pub allocated: u64,
     pub freed: u64,
@@ -125,19 +125,26 @@ impl Hash for HashedBacktrace {
     }
 }
 
+/// Allocation information pertaining to a specific backtrace.
 #[derive(Debug, Clone, Default)]
 pub struct BacktraceMetric {
+    /// Number of bytes allocated
     pub allocated: u64,
+    /// Number of bytes allocated here that have since been freed
     pub freed: u64,
+    /// Number of actual allocations
     pub allocations: u64,
+    /// `mode` as copied from `AllocTrack`
     pub mode: BacktraceMode,
 }
 
 impl BacktraceMetric {
+    /// Number of bytes currently allocated and not freed
     pub fn in_use(&self) -> u64 {
         self.allocated.saturating_sub(self.freed)
     }
 
+    /// Average number of bytes per allocation
     pub fn avg_allocation(&self) -> f64 {
         if self.allocations == 0 {
             0.0
@@ -158,6 +165,7 @@ impl fmt::Display for BacktraceMetric {
     }
 }
 
+/// A report of all (post-filter) backtraces and their associated allocations metrics.
 pub struct BacktraceReport(pub Vec<(HashedBacktrace, BacktraceMetric)>);
 
 impl fmt::Display for BacktraceReport {
