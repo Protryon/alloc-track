@@ -105,12 +105,12 @@ impl<T: GlobalAlloc> AllocTrack<T> {
 }
 #[cfg(unix)]
 #[inline(always)]
-unsafe fn get_sys_tid()->u32{
+unsafe fn get_sys_tid() -> u32 {
     libc::syscall(libc::SYS_gettid) as u32
 }
 #[cfg(windows)]
 #[inline(always)]
-unsafe fn get_sys_tid()->u32{
+unsafe fn get_sys_tid() -> u32 {
     windows::Win32::System::Threading::GetCurrentThreadId()
 }
 unsafe impl<T: GlobalAlloc> GlobalAlloc for AllocTrack<T> {
@@ -272,7 +272,7 @@ pub fn backtrace_report(
     BacktraceReport(out2)
 }
 #[cfg(unix)]
-fn os_tid_names()->HashMap<u32, String>{
+fn os_tid_names() -> HashMap<u32, String> {
     let mut os_tid_names: HashMap<u32, String> = HashMap::new();
     for task in procfs::process::Process::myself().unwrap().tasks().unwrap() {
         let task = task.unwrap();
@@ -288,10 +288,12 @@ fn os_tid_names()->HashMap<u32, String>{
 }
 
 #[cfg(windows)]
-fn os_tid_names()->HashMap<u32, String>{
-     use windows::Win32::System::Diagnostics::ToolHelp::{THREADENTRY32, Thread32First, Thread32Next};
-     use windows::Win32::Foundation::CloseHandle;
-     use std::alloc::alloc;
+fn os_tid_names() -> HashMap<u32, String> {
+    use std::alloc::alloc;
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Diagnostics::ToolHelp::{
+        Thread32First, Thread32Next, THREADENTRY32,
+    };
     let mut os_tid_names: HashMap<u32, String> = HashMap::new();
     unsafe {
         let process_id = windows::Win32::System::Threading::GetCurrentProcessId();
@@ -299,10 +301,10 @@ fn os_tid_names()->HashMap<u32, String>{
             windows::Win32::System::Diagnostics::ToolHelp::TH32CS_SNAPTHREAD,
             0,
         );
-        if let Ok(snapshot) = snapshot{
+        if let Ok(snapshot) = snapshot {
             let mut thread_entry = alloc(Layout::new::<THREADENTRY32>()) as *mut THREADENTRY32;
             (*thread_entry).dwSize = std::mem::size_of::<THREADENTRY32>() as u32;
-            if Thread32First(snapshot, thread_entry).as_bool(){
+            if Thread32First(snapshot, thread_entry).as_bool() {
                 loop {
                     if (*thread_entry).th32OwnerProcessID == process_id {
                         let thread_handle = windows::Win32::System::Threading::OpenThread(
@@ -310,32 +312,33 @@ fn os_tid_names()->HashMap<u32, String>{
                             false,
                             (*thread_entry).th32ThreadID,
                         );
-                        if let Ok(handle) = thread_handle{
-                            let result = windows::Win32::System::Threading::GetThreadDescription(
-                                handle
-                            );
+                        if let Ok(handle) = thread_handle {
+                            let result =
+                                windows::Win32::System::Threading::GetThreadDescription(handle);
                             if let Ok(str) = result {
-                                os_tid_names.insert((*thread_entry).th32ThreadID, str.to_string().unwrap_or("UTF-16 Error".to_string()));
-                            }else {
-                                os_tid_names.insert((*thread_entry).th32ThreadID, "unknown".to_string());
+                                os_tid_names.insert(
+                                    (*thread_entry).th32ThreadID,
+                                    str.to_string().unwrap_or("UTF-16 Error".to_string()),
+                                );
+                            } else {
+                                os_tid_names
+                                    .insert((*thread_entry).th32ThreadID, "unknown".to_string());
                             }
                             CloseHandle(handle);
                         }
-
                     }
                     if !Thread32Next(snapshot, thread_entry).as_bool() {
                         break;
                     }
-
                 }
             }
-            CloseHandle (snapshot);
+            CloseHandle(snapshot);
         }
     }
     os_tid_names
 }
 #[test]
-pub fn test_os_tid_names(){
+pub fn test_os_tid_names() {
     std::thread::Builder::new()
         .name("thread2".to_string())
         .spawn(move || {
