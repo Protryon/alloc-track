@@ -8,7 +8,6 @@ use std::{
     fmt,
     sync::atomic::{AtomicU32, AtomicUsize, Ordering},
 };
-use libc::getchar;
 
 #[cfg(feature = "backtrace")]
 mod backtrace_support;
@@ -106,15 +105,13 @@ impl<T: GlobalAlloc> AllocTrack<T> {
 }
 #[cfg(unix)]
 #[inline(always)]
-fn get_sys_tid()->u32{
+unsafe fn get_sys_tid()->u32{
     libc::syscall(libc::SYS_gettid) as u32
 }
 #[cfg(windows)]
 #[inline(always)]
-fn get_sys_tid()->u32{
-    unsafe{
-        windows::Win32::System::Threading::GetCurrentThreadId()
-    }
+unsafe fn get_sys_tid()->u32{
+    windows::Win32::System::Threading::GetCurrentThreadId()
 }
 unsafe impl<T: GlobalAlloc> GlobalAlloc for AllocTrack<T> {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
