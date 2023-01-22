@@ -8,6 +8,7 @@ use std::{
     fmt,
     sync::atomic::{AtomicU32, AtomicUsize, Ordering},
 };
+use libc::getchar;
 
 #[cfg(feature = "backtrace")]
 mod backtrace_support;
@@ -103,7 +104,18 @@ impl<T: GlobalAlloc> AllocTrack<T> {
         Self { inner, backtrace }
     }
 }
-
+#[cfg(unix)]
+#[inline(always)]
+fn get_sys_tid()->u32{
+    libc::syscall(libc::SYS_gettid) as u32
+}
+#[cfg(windows)]
+#[inline(always)]
+fn get_sys_tid()->u32{
+    unsafe{
+        windows::Win32::System::Threading::GetCurrentThreadId()
+    }
+}
 unsafe impl<T: GlobalAlloc> GlobalAlloc for AllocTrack<T> {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         if IN_ALLOC.with(|x| x.get()) {
@@ -113,9 +125,8 @@ unsafe impl<T: GlobalAlloc> GlobalAlloc for AllocTrack<T> {
             let size = layout.size();
             let ptr = self.inner.alloc(layout);
             let tid = THREAD_ID.with(|x| *x);
-            #[cfg(unix)]
             if THREAD_STORE[tid].tid.load(Ordering::Relaxed) == 0 {
-                let os_tid = libc::syscall(libc::SYS_gettid) as u32;
+                let os_tid = get_sys_tid();
                 THREAD_STORE[tid].tid.store(os_tid, Ordering::Relaxed);
             }
             THREAD_STORE[tid].alloc.fetch_add(size, Ordering::Relaxed);
