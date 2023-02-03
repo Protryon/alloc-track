@@ -103,7 +103,16 @@ impl<T: GlobalAlloc> AllocTrack<T> {
         Self { inner, backtrace }
     }
 }
-
+#[cfg(unix)]
+#[inline(always)]
+unsafe fn get_sys_tid() -> u32 {
+    libc::syscall(libc::SYS_gettid) as u32
+}
+#[cfg(windows)]
+#[inline(always)]
+unsafe fn get_sys_tid() -> u32 {
+    windows::Win32::System::Threading::GetCurrentThreadId()
+}
 unsafe impl<T: GlobalAlloc> GlobalAlloc for AllocTrack<T> {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         if IN_ALLOC.with(|x| x.get()) {
@@ -114,7 +123,7 @@ unsafe impl<T: GlobalAlloc> GlobalAlloc for AllocTrack<T> {
             let ptr = self.inner.alloc(layout);
             let tid = THREAD_ID.with(|x| *x);
             if THREAD_STORE[tid].tid.load(Ordering::Relaxed) == 0 {
-                let os_tid = libc::syscall(libc::SYS_gettid) as u32;
+                let os_tid = get_sys_tid();
                 THREAD_STORE[tid].tid.store(os_tid, Ordering::Relaxed);
             }
             THREAD_STORE[tid].alloc.fetch_add(size, Ordering::Relaxed);
@@ -262,10 +271,8 @@ pub fn backtrace_report(
     IN_ALLOC.with(|x| x.set(false));
     BacktraceReport(out2)
 }
-
-/// Generate a memory usage report
-/// Note that the numbers are not a synchronized snapshot, and have slight timing skew.
-pub fn thread_report() -> ThreadReport {
+#[cfg(unix)]
+fn os_tid_names() -> HashMap<u32, String> {
     let mut os_tid_names: HashMap<u32, String> = HashMap::new();
     for task in procfs::process::Process::myself().unwrap().tasks().unwrap() {
         let task = task.unwrap();
@@ -277,7 +284,75 @@ pub fn thread_report() -> ThreadReport {
                 .to_string(),
         );
     }
+    os_tid_names
+}
 
+#[cfg(windows)]
+fn os_tid_names() -> HashMap<u32, String> {
+    use std::alloc::alloc;
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Diagnostics::ToolHelp::{
+        Thread32First, Thread32Next, THREADENTRY32,
+    };
+    let mut os_tid_names: HashMap<u32, String> = HashMap::new();
+    unsafe {
+        let process_id = windows::Win32::System::Threading::GetCurrentProcessId();
+        let snapshot = windows::Win32::System::Diagnostics::ToolHelp::CreateToolhelp32Snapshot(
+            windows::Win32::System::Diagnostics::ToolHelp::TH32CS_SNAPTHREAD,
+            0,
+        );
+        if let Ok(snapshot) = snapshot {
+            let mut thread_entry = alloc(Layout::new::<THREADENTRY32>()) as *mut THREADENTRY32;
+            (*thread_entry).dwSize = std::mem::size_of::<THREADENTRY32>() as u32;
+            if Thread32First(snapshot, thread_entry).as_bool() {
+                loop {
+                    if (*thread_entry).th32OwnerProcessID == process_id {
+                        let thread_handle = windows::Win32::System::Threading::OpenThread(
+                            windows::Win32::System::Threading::THREAD_QUERY_LIMITED_INFORMATION,
+                            false,
+                            (*thread_entry).th32ThreadID,
+                        );
+                        if let Ok(handle) = thread_handle {
+                            let result =
+                                windows::Win32::System::Threading::GetThreadDescription(handle);
+                            if let Ok(str) = result {
+                                os_tid_names.insert(
+                                    (*thread_entry).th32ThreadID,
+                                    str.to_string().unwrap_or("UTF-16 Error".to_string()),
+                                );
+                            } else {
+                                os_tid_names
+                                    .insert((*thread_entry).th32ThreadID, "unknown".to_string());
+                            }
+                            CloseHandle(handle);
+                        }
+                    }
+                    if !Thread32Next(snapshot, thread_entry).as_bool() {
+                        break;
+                    }
+                }
+            }
+            CloseHandle(snapshot);
+        }
+    }
+    os_tid_names
+}
+#[test]
+pub fn test_os_tid_names() {
+    std::thread::Builder::new()
+        .name("thread2".to_string())
+        .spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(100));
+        })
+        .unwrap();
+
+    let os_tid_names = os_tid_names();
+    println!("{:?}", os_tid_names);
+}
+/// Generate a memory usage report
+/// Note that the numbers are not a synchronized snapshot, and have slight timing skew.
+pub fn thread_report() -> ThreadReport {
+    let os_tid_names = os_tid_names();
     let mut tid_names: HashMap<usize, &String> = HashMap::new();
     for (i, thread) in THREAD_STORE.iter().enumerate() {
         let tid = thread.tid.load(Ordering::Relaxed);
