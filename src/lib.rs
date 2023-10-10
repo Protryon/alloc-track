@@ -1,10 +1,12 @@
 #![doc = include_str!("../README.md")]
 
 use dashmap::DashMap;
+#[allow(unused_imports)]
+use std::collections::HashMap;
 use std::{
     alloc::{GlobalAlloc, Layout},
     cell::Cell,
-    collections::{BTreeMap, HashMap},
+    collections::BTreeMap,
     fmt,
     sync::atomic::{AtomicU32, AtomicUsize, Ordering},
 };
@@ -38,6 +40,7 @@ lazy_static::lazy_static! {
 
 /// Representation of globally-accessible TLS
 struct ThreadStore {
+    #[allow(dead_code)]
     tid: AtomicU32,
     alloc: AtomicUsize,
     free: [AtomicUsize; MAX_THREADS],
@@ -103,16 +106,18 @@ impl<T: GlobalAlloc> AllocTrack<T> {
         Self { inner, backtrace }
     }
 }
-#[cfg(unix)]
+#[cfg(all(unix, feature = "fs"))]
 #[inline(always)]
 unsafe fn get_sys_tid() -> u32 {
     libc::syscall(libc::SYS_gettid) as u32
 }
-#[cfg(windows)]
+
+#[cfg(all(windows, feature = "fs"))]
 #[inline(always)]
 unsafe fn get_sys_tid() -> u32 {
     windows::Win32::System::Threading::GetCurrentThreadId()
 }
+
 unsafe impl<T: GlobalAlloc> GlobalAlloc for AllocTrack<T> {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         if IN_ALLOC.with(|x| x.get()) {
@@ -122,6 +127,7 @@ unsafe impl<T: GlobalAlloc> GlobalAlloc for AllocTrack<T> {
             let size = layout.size();
             let ptr = self.inner.alloc(layout);
             let tid = THREAD_ID.with(|x| *x);
+            #[cfg(feature = "fs")]
             if THREAD_STORE[tid].tid.load(Ordering::Relaxed) == 0 {
                 let os_tid = get_sys_tid();
                 THREAD_STORE[tid].tid.store(os_tid, Ordering::Relaxed);
@@ -271,7 +277,8 @@ pub fn backtrace_report(
     IN_ALLOC.with(|x| x.set(false));
     BacktraceReport(out2)
 }
-#[cfg(unix)]
+
+#[cfg(all(unix, feature = "fs"))]
 fn os_tid_names() -> HashMap<u32, String> {
     let mut os_tid_names: HashMap<u32, String> = HashMap::new();
     for task in procfs::process::Process::myself().unwrap().tasks().unwrap() {
@@ -287,7 +294,7 @@ fn os_tid_names() -> HashMap<u32, String> {
     os_tid_names
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "fs"))]
 fn os_tid_names() -> HashMap<u32, String> {
     use std::alloc::alloc;
     use windows::Win32::Foundation::CloseHandle;
@@ -337,50 +344,43 @@ fn os_tid_names() -> HashMap<u32, String> {
     }
     os_tid_names
 }
-#[test]
-pub fn test_os_tid_names() {
-    std::thread::Builder::new()
-        .name("thread2".to_string())
-        .spawn(move || {
-            std::thread::sleep(std::time::Duration::from_secs(100));
-        })
-        .unwrap();
 
-    let os_tid_names = os_tid_names();
-    println!("{:?}", os_tid_names);
-}
 /// Generate a memory usage report
 /// Note that the numbers are not a synchronized snapshot, and have slight timing skew.
 pub fn thread_report() -> ThreadReport {
-    let os_tid_names = os_tid_names();
+    #[cfg(feature = "fs")]
+    let os_tid_names: HashMap<u32, String> = os_tid_names();
+    #[cfg(feature = "fs")]
     let mut tid_names: HashMap<usize, &String> = HashMap::new();
-    for (i, thread) in THREAD_STORE.iter().enumerate() {
-        let tid = thread.tid.load(Ordering::Relaxed);
-        if tid == 0 {
-            continue;
+    #[cfg(feature = "fs")]
+    let get_tid_name = {
+        for (i, thread) in THREAD_STORE.iter().enumerate() {
+            let tid = thread.tid.load(Ordering::Relaxed);
+            if tid == 0 {
+                continue;
+            }
+            if let Some(name) = os_tid_names.get(&tid) {
+                tid_names.insert(i, name);
+            }
         }
-        if let Some(name) = os_tid_names.get(&tid) {
-            tid_names.insert(i, name);
-        }
-    }
+        |id: usize| tid_names.get(&id).map(|x| &**x)
+    };
+    #[cfg(not(feature = "fs"))]
+    let get_tid_name = { move |id: usize| Some(id.to_string()) };
 
     let mut metrics = BTreeMap::new();
 
     for (i, thread) in THREAD_STORE.iter().enumerate() {
-        let name = if let Some(name) = tid_names.get(&i) {
-            *name
-        } else {
+        let Some(name) = get_tid_name(i) else {
             continue;
         };
         let alloced = thread.alloc.load(Ordering::Relaxed) as u64;
-        let metric: &mut ThreadMetric = metrics.entry(name.clone()).or_default();
+        let metric: &mut ThreadMetric = metrics.entry(name.into()).or_default();
         metric.total_alloc += alloced;
 
         let mut total_free: u64 = 0;
         for (j, thread2) in THREAD_STORE.iter().enumerate() {
-            let name = if let Some(name) = tid_names.get(&j) {
-                *name
-            } else {
+            let Some(name) = get_tid_name(j) else {
                 continue;
             };
             let freed = thread2.free[i].load(Ordering::Relaxed);
@@ -388,7 +388,7 @@ pub fn thread_report() -> ThreadReport {
                 continue;
             }
             total_free += freed as u64;
-            *metric.freed_by_others.entry(name.clone()).or_default() += freed as u64;
+            *metric.freed_by_others.entry(name.into()).or_default() += freed as u64;
         }
         metric.total_did_free += total_free;
         metric.total_freed += thread
@@ -399,4 +399,24 @@ pub fn thread_report() -> ThreadReport {
         metric.current_used += alloced.saturating_sub(total_free);
     }
     ThreadReport(metrics)
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    pub fn test_os_tid_names() {
+        std::thread::Builder::new()
+            .name("thread2".to_string())
+            .spawn(move || {
+                std::thread::sleep(std::time::Duration::from_secs(100));
+            })
+            .unwrap();
+
+        let os_tid_names = os_tid_names();
+        println!("{:?}", os_tid_names);
+    }
+
 }
