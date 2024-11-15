@@ -25,6 +25,7 @@ fn main() {
             last_print = Instant::now();
             let report = alloc_track::backtrace_report(|_, _| true);
             println!("BACKTRACES\n{report}");
+            println!("BACKTRACES CSV\n{}", report.csv());
             let report = alloc_track::thread_report();
             println!("THREADS\n{report}");
         }

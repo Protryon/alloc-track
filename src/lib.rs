@@ -401,7 +401,6 @@ pub fn thread_report() -> ThreadReport {
     ThreadReport(metrics)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -418,5 +417,4 @@ mod tests {
         let os_tid_names = os_tid_names();
         println!("{:?}", os_tid_names);
     }
-
 }

@@ -1,5 +1,5 @@
 use std::collections::hash_map::DefaultHasher;
-use std::fmt;
+use std::fmt::{self, Write};
 use std::hash::{Hash, Hasher};
 
 pub use backtrace;
@@ -165,8 +165,63 @@ impl fmt::Display for BacktraceMetric {
     }
 }
 
+impl BacktraceMetric {
+    pub fn csv_write(&self, out: &mut impl Write) -> fmt::Result {
+        write!(
+            out,
+            "{},{},{},{},{}",
+            self.allocated,
+            self.allocations,
+            self.avg_allocation(),
+            self.freed,
+            self.in_use()
+        )?;
+        Ok(())
+    }
+}
+
 /// A report of all (post-filter) backtraces and their associated allocations metrics.
 pub struct BacktraceReport(pub Vec<(HashedBacktrace, BacktraceMetric)>);
+
+impl BacktraceReport {
+    pub fn csv(&self) -> String {
+        let mut out = String::new();
+        write!(
+            &mut out,
+            "allocated,allocations,avg_allocation,freed,total_used,backtrace\n"
+        )
+        .unwrap();
+        for (backtrace, metric) in &self.0 {
+            match metric.mode {
+                BacktraceMode::None => unreachable!(),
+                BacktraceMode::Short => {
+                    metric.csv_write(&mut out).unwrap();
+                    writeln!(
+                        &mut out,
+                        ",\"{}\"",
+                        HashedBacktraceShort(backtrace)
+                            .to_string()
+                            .replace("\\", "\\\\")
+                            .replace("\n", "\\n")
+                    )
+                    .unwrap();
+                }
+                BacktraceMode::Full => {
+                    metric.csv_write(&mut out).unwrap();
+                    writeln!(
+                        &mut out,
+                        ",\"{}\"",
+                        format!("{:?}", backtrace.inner())
+                            .replace("\\", "\\\\")
+                            .replace("\n", "\\n")
+                    )
+                    .unwrap();
+                }
+            }
+        }
+        out
+    }
+}
 
 impl fmt::Display for BacktraceReport {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
