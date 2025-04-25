@@ -21,7 +21,9 @@ pub use backtrace_support::{BacktraceMetric, BacktraceReport, HashedBacktrace};
 /// next thread id incrementor
 static THREAD_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
-const MAX_THREADS: usize = 256;
+/// On linux you can check your system by running `cat /proc/sys/kernel/threads-max`
+/// It's almost certain that this limit will be hit in some strange corner cases.
+const MAX_THREADS: usize = 1024;
 
 #[derive(Clone, Copy, Debug)]
 struct PointerData {
@@ -127,6 +129,10 @@ unsafe impl<T: GlobalAlloc> GlobalAlloc for AllocTrack<T> {
             let size = layout.size();
             let ptr = self.inner.alloc(layout);
             let tid = THREAD_ID.with(|x| *x);
+            assert!(
+                tid < MAX_THREADS,
+                "Thread ID {tid} is greater than the maximum number of threads {MAX_THREADS}"
+            );
             #[cfg(feature = "fs")]
             if THREAD_STORE[tid].tid.load(Ordering::Relaxed) == 0 {
                 let os_tid = get_sys_tid();
