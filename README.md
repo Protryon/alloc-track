@@ -23,7 +23,7 @@ This project allows per-thread and per-backtrace realtime memory profiling.
     use std::alloc::System;
 
     #[global_allocator]
-    static GLOBAL_ALLOC: AllocTrack<System> = AllocTrack::new(System, BacktraceMode::Short);
+    static GLOBAL_ALLOC: AllocTrack<System> = AllocTrack::new(System, BacktraceMode::Short(|_| true));
     ```
 
     Jemallocator allocator:
@@ -33,7 +33,7 @@ This project allows per-thread and per-backtrace realtime memory profiling.
     use jemallocator::Jemalloc;
 
     #[global_allocator]
-    static GLOBAL_ALLOC: AllocTrack<Jemalloc> = AllocTrack::new(Jemalloc, BacktraceMode::Short);
+    static GLOBAL_ALLOC: AllocTrack<Jemalloc> = AllocTrack::new(Jemalloc, BacktraceMode::Short(|_| true));
     ```
 
 3. Call `alloc_track::thread_report()` or `alloc_track::backtrace_report()` to generate a report. Note that `backtrace_report` requires the `backtrace` feature and the `BacktraceMode::Short` or `BacktraceMode::Full` flag to be passed to `AllocTrack::new`.

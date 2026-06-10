@@ -13,6 +13,9 @@ dashmap = "5.3"
 lazy_static = "1.4"
 backtrace = { version = "0.3", optional = true }
 
+[dev-dependencies]
+jemallocator = "0.5.4"
+
 [target.'cfg(target_os = "macos")'.dependencies]
 libc = { version = "0.2", optional = true }
 
